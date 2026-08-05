@@ -4,7 +4,8 @@ import { requireSession } from "@/lib/guard";
 
 // Print-ready estimate document. v1 ships browser print-to-PDF (zero deps, works on Vercel);
 // headless PDF generation is a drop-in swap later if attachment automation needs it.
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   const e = await prisma.estimate.findUnique({ where: { id: params.id }, include: { client: true, items: { orderBy: { sortOrder: "asc" } } } });

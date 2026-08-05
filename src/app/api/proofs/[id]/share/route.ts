@@ -5,7 +5,8 @@ import { appUrl } from "@/lib/oauth";
 import { randomBytes } from "node:crypto";
 
 // Mint (or return) the public approval link for a proof.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   try {

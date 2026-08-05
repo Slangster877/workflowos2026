@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireSession, bad } from "@/lib/guard";
 import { orderUpdate } from "@/lib/schemas";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   const order = await prisma.order.findUnique({
@@ -20,7 +21,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(order);
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   try {
@@ -32,7 +34,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   await prisma.order.update({ where: { id: params.id }, data: { deletedAt: new Date() } });

@@ -1,4 +1,4 @@
-export { default } from "next-auth/middleware";
+export { default as proxy } from "next-auth/middleware";
 
 // Everything requires sign-in except the login page, auth endpoints, and health check.
 export const config = {

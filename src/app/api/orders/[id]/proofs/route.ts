@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireSession, bad } from "@/lib/guard";
 import { proofCreate } from "@/lib/schemas";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   try {

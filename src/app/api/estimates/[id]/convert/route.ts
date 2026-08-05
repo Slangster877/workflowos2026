@@ -4,7 +4,8 @@ import { requireSession, bad } from "@/lib/guard";
 import { nextNumber } from "@/lib/numbers";
 
 // Approved estimate → real Order, carrying the sign line's type and the full total.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { session, deny } = await requireSession();
   if (deny) return deny;
   try {

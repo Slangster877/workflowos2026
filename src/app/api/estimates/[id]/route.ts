@@ -4,7 +4,8 @@ import { requireSession, bad } from "@/lib/guard";
 import { computeLines, LineInput } from "@/lib/estimating";
 import { z } from "zod";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   const est = await prisma.estimate.findUnique({
@@ -22,7 +23,8 @@ const patchSchema = z.object({
   items: z.array(z.any()).optional(), // full replace; engine recomputes everything
 });
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { deny } = await requireSession();
   if (deny) return deny;
   try {

@@ -4,7 +4,8 @@ import { gmailApi } from "@/lib/gmail";
 import { z } from "zod";
 
 // PUBLIC endpoint — the token IS the auth. Read returns proof context; POST records the decision.
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const proof = await prisma.proof.findUnique({
     where: { approvalToken: params.token },
     include: { order: { include: { client: { select: { company: true } } } } },
@@ -18,7 +19,8 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
 
 const actSchema = z.object({ action: z.enum(["APPROVED", "REVISIONS"]), note: z.string().max(1000).optional() });
 
-export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   try {
     const { action, note } = actSchema.parse(await req.json());
     const proof = await prisma.proof.findUnique({ where: { approvalToken: params.token }, include: { order: { include: { pm: true, client: true } } } });

@@ -39,22 +39,24 @@ export function crudHandlers(model: Model, createSchema: ZodSchema, searchFields
     }
   }
 
-  async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { deny } = await requireSession();
     if (deny) return deny;
     try {
+      const { id } = await params;
       const data = (createSchema as any).partial().parse(await req.json());
-      const row = await delegate().update({ where: { id: params.id }, data });
+      const row = await delegate().update({ where: { id }, data });
       return NextResponse.json(row);
     } catch (e) {
       return bad(e);
     }
   }
 
-  async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { deny } = await requireSession();
     if (deny) return deny;
-    await delegate().update({ where: { id: params.id }, data: { deletedAt: new Date() } });
+    const { id } = await params;
+    await delegate().update({ where: { id }, data: { deletedAt: new Date() } });
     return NextResponse.json({ ok: true });
   }
 
