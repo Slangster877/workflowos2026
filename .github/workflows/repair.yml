@@ -1,0 +1,103 @@
+name: Repair repository structure
+
+on:
+  push:
+    branches:
+      - agent/repair-repository-structure
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+
+      - name: Extract application source
+        run: |
+          temp_dir="$(mktemp -d)"
+          unzip -q workflowos-phase4.zip -d "$temp_dir"
+          cp -a "$temp_dir/workflowos/." .
+          rm workflowos-phase4.zip
+
+      - name: Fix estimate relation update
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/app/api/estimates/[id]/route.ts")
+          source = path.read_text()
+          source = source.replace(
+              """    const data = patchSchema.parse(await req.json());
+    if (data.items) {
+      const { lines, subtotal, marginPct } = await computeLines(data.items as LineInput[]);""",
+              """    const data = patchSchema.parse(await req.json());
+    const { items, ...estimateData } = data;
+    if (items) {
+      const { lines, subtotal, marginPct } = await computeLines(items as LineInput[]);""",
+          )
+          source = source.replace(
+              """prisma.estimate.update({ where: { id: params.id }, data: { subtotal, marginPct, total: subtotal, title: data.title, status: data.status, notes: data.notes } })""",
+              """prisma.estimate.update({ where: { id: params.id }, data: { ...estimateData, subtotal, marginPct, total: subtotal } })""",
+          )
+          source = source.replace(
+              """prisma.estimate.update({ where: { id: params.id }, data });""",
+              """prisma.estimate.update({ where: { id: params.id }, data: estimateData });""",
+          )
+          path.write_text(source)
+          PY
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate production build
+        run: npm run build
+
+      - name: Install permanent build check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/build.yml")
+          path.write_text("""name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+""")
+          Path(".github/workflows/repair.yml").unlink()
+          PY
+
+      - name: Commit repaired repository
+        run: |
+          git config user.name "Scott Langley"
+          git config user.email "179790289+Slangster877@users.noreply.github.com"
+          git add -A
+          git commit -m "Repair repository structure and restore build"
+          git push
