@@ -1,0 +1,91 @@
+name: Complete security upgrade
+
+on:
+  push:
+    branches:
+      - agent/repair-repository-structure
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+
+      - name: Determine whether upgrade is needed
+        id: prepare
+        run: |
+          if node -e "process.exit(require('./package.json').dependencies.next === '^16.3.0' ? 0 : 1)"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Upgrade patched framework dependencies
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        run: npm install next@^16.3.0
+
+      - name: Migrate asynchronous route parameters
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        run: npx --yes @next/codemod@canary next-async-request-api src -f
+
+      - name: Finish shared CRUD and proxy migration
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          crud = Path("src/lib/crud.ts")
+          source = crud.read_text()
+          source = source.replace(
+              "async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {",
+              "async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {",
+          )
+          source = source.replace(
+              "      const data = (createSchema as any).partial().parse(await req.json());\n      const row = await delegate().update({ where: { id: params.id }, data });",
+              "      const { id } = await params;\n      const data = (createSchema as any).partial().parse(await req.json());\n      const row = await delegate().update({ where: { id }, data });",
+          )
+          source = source.replace(
+              "async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {",
+              "async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {",
+          )
+          source = source.replace(
+              "    await delegate().update({ where: { id: params.id }, data: { deletedAt: new Date() } });",
+              "    const { id } = await params;\n    await delegate().update({ where: { id }, data: { deletedAt: new Date() } });",
+          )
+          crud.write_text(source)
+
+          middleware = Path("src/middleware.ts")
+          proxy = Path("src/proxy.ts")
+          proxy.write_text(middleware.read_text().replace(
+              'export { default } from "next-auth/middleware";',
+              'export { default as proxy } from "next-auth/middleware";',
+          ))
+          middleware.unlink()
+          PY
+
+      - name: Validate clean install, build, and audit
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        run: |
+          npm ci
+          npm run build
+          npm audit --audit-level=low
+
+      - name: Commit security upgrade
+        if: ${{ steps.prepare.outputs.run == 'true' }}
+        run: |
+          git config user.name "Scott Langley"
+          git config user.email "179790289+Slangster877@users.noreply.github.com"
+          git add package.json package-lock.json next-env.d.ts tsconfig.json src
+          git commit -m "Upgrade Next.js and clear dependency vulnerabilities"
+          git push
