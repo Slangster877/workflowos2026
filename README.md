@@ -20,16 +20,16 @@ with NextAuth role-based sign-in and the design tokens carried over.
    `NEXTAUTH_SECRET` (`openssl rand -base64 32`).
 3. `npm install`
 4. `npx prisma migrate dev --name init`   ← creates all tables
-5. `npm run seed`
+5. Set `OWNER_PASSWORD` to a strong initial password, then run `npm run seed`
 6. `npm run dev` → http://localhost:3000
-   Sign in: **scott@grandmarksigns.com / changeme** — change it immediately
-   (`npx prisma studio` → User → paste a new bcrypt hash, or wait for the Phase 2 profile page).
+   Sign in with **scott@grandmarksigns.com** and the password you set.
 
 ## Deploy to Vercel
 1. Push this folder to a GitHub repo.
 2. vercel.com → New Project → import the repo. Framework auto-detects Next.js.
 3. Add env vars: `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_SECRET`, and
-   `NEXTAUTH_URL=https://<your-app>.vercel.app`.
+   `NEXTAUTH_URL=https://<your-app>.vercel.app`. Set `OWNER_PASSWORD` only
+   while creating the initial owner with `npm run seed`.
 4. Deploy. Visit `/api/health` — `{ ok: true, db: "up" }` means you're live.
 
 ## Phase 2 starts here

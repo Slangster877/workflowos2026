@@ -24,8 +24,14 @@ const VENDORS: { name: string; category: string; coverage: Coverage; city: strin
 ];
 
 async function main() {
-  // Owner login — change this password immediately after first sign-in
-  const passwordHash = await bcrypt.hash("changeme", 12);
+  const existingOwner = await prisma.user.findUnique({
+    where: { email: "scott@grandmarksigns.com" },
+  });
+  const ownerPassword = process.env.OWNER_PASSWORD;
+  if (!existingOwner && !ownerPassword) {
+    throw new Error("OWNER_PASSWORD is required when creating the initial owner account.");
+  }
+  const passwordHash = existingOwner?.passwordHash ?? await bcrypt.hash(ownerPassword!, 12);
   const owner = await prisma.user.upsert({
     where: { email: "scott@grandmarksigns.com" },
     update: {},
@@ -42,9 +48,10 @@ async function main() {
     await prisma.vendor.upsert({ where: { name: v.name }, update: {}, create: { ...v } });
   }
 
-  // One sample chain proving every relation end-to-end
-  const client = await prisma.client.create({
-    data: {
+  // One idempotent sample chain proving every relation end-to-end
+  let client = await prisma.client.findFirst({ where: { company: "Planet Fitness" } });
+  if (!client) {
+    client = await prisma.client.create({ data: {
       company: "Planet Fitness",
       businessType: "Retail Chain",
       contactName: "Dana Whitfield",
@@ -54,11 +61,13 @@ async function main() {
       contacts: {
         create: { name: "Dana Whitfield", title: "Facilities Manager", phone: "(913) 555-0199", email: "dana@planetfitness.com" },
       },
-    },
-  });
+    } });
+  }
 
-  const order = await prisma.order.create({
-    data: {
+  const order = await prisma.order.upsert({
+    where: { number: "ORD-1001" },
+    update: {},
+    create: {
       number: "ORD-1001",
       clientId: client.id,
       projectName: "Monument Sign – Store #7244",
