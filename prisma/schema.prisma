@@ -1,0 +1,480 @@
+// GrandMark WorkflowOS — production schema
+// Every model maps 1:1 to an entity proven in the prototype.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Auth & team ─────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  PM
+  PRODUCTION
+  INSTALLER
+  OFFICE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  initials     String   @db.VarChar(3)
+  role         Role     @default(PM)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  managedClients Client[]        @relation("AccountManager")
+  managedOrders  Order[]         @relation("OrderPM")
+  jobs           ProductionJob[] @relation("Technician")
+  installs       Install[]       @relation("CrewLead")
+  tickets        ServiceTicket[] @relation("AssignedTo")
+  chatMessages   ChatMessage[]
+}
+
+// ── CRM ─────────────────────────────────────────────────────
+
+model Client {
+  id           String    @id @default(cuid())
+  company      String
+  businessType String? // Retail Chain, Restaurant / QSR, Automotive, ...
+  status       String    @default("Active") // Active | Inactive
+  contactName  String?
+  phone        String?
+  email        String?
+  website      String?
+  qboId        String?   @unique // QuickBooks customer id (Phase 3)
+  accountMgr   User?     @relation("AccountManager", fields: [accountMgrId], references: [id])
+  accountMgrId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  contacts  Contact[]
+  orders    Order[]
+  estimates Estimate[]
+  invoices  Invoice[]
+  tickets   ServiceTicket[]
+  emails    EmailRecord[]
+  events    ScheduleEvent[]
+
+  @@index([company])
+}
+
+model Contact {
+  id              String    @id @default(cuid())
+  name            String
+  title           String? // Facilities Manager, Marketing Director, ...
+  client          Client    @relation(fields: [clientId], references: [id])
+  clientId        String
+  phone           String?
+  email           String?
+  lastContactedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  emails EmailRecord[]
+
+  @@index([clientId])
+}
+
+// ── Vendors & inventory ─────────────────────────────────────
+
+enum Coverage {
+  LOCAL
+  REGIONAL
+  NATIONAL
+}
+
+model Vendor {
+  id           String    @id @default(cuid())
+  name         String    @unique
+  category     String // Vinyl & Graphics, LED & Electrical, Substrates, Paint & Coatings, Hardware
+  coverage     Coverage  @default(REGIONAL)
+  contactName  String?
+  phone        String?
+  email        String?
+  website      String?
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  leadTimeDays Int       @default(5)
+  rating       Float? // 0–5
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  materials Material[]
+}
+
+model Material {
+  id           String    @id @default(cuid())
+  name         String // 3M IJ180Cv3 Cast Vinyl, ACM 3mm, Principal LED module, ...
+  category     String
+  vendor       Vendor?   @relation(fields: [vendorId], references: [id])
+  vendorId     String?
+  unit         String    @default("Each") // Sheet, Roll, Each, Gallon, Linear Ft, Sq Ft, Box, Kit
+  unitCost     Decimal?  @db.Decimal(10, 2)
+  sku          String?
+  qtyOnHand    Int       @default(0)
+  reorderPoint Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([category])
+}
+
+// ── Orders (the core) ───────────────────────────────────────
+
+enum OrderStatus {
+  OPEN
+  PRODUCTION
+  INSTALL
+  COMPLETED
+  ON_HOLD
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  number       String      @unique // ORD-1323
+  client       Client      @relation(fields: [clientId], references: [id])
+  clientId     String
+  projectName  String // "Monument Sign – Store #7244"
+  signType     String // Wall Sign, Pylon Sign, Channel Letters, ...
+  illumination String? // Illuminated — LED, Neon, Non-illuminated, Digital / EMC
+  status       OrderStatus @default(OPEN)
+  priority     Priority    @default(MEDIUM)
+  total        Decimal     @default(0) @db.Decimal(12, 2)
+  progress     Int         @default(0) // 0–100
+  orderedAt    DateTime    @default(now())
+  dueAt        DateTime?
+  storeNumber  String?
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  poNumber     String?
+  pm           User?       @relation("OrderPM", fields: [pmId], references: [id])
+  pmId         String?
+  qboInvoiceId String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+
+  proofs    Proof[]
+  chat      ChatMessage[]
+  jobs      ProductionJob[]
+  installs  Install[]
+  invoices  Invoice[]
+  emails    EmailRecord[]
+  shipments Shipment[]
+  events    ScheduleEvent[]
+
+  @@index([status])
+  @@index([clientId])
+  @@index([dueAt])
+}
+
+// ── Proofs (versioned artwork w/ customer approval) ─────────
+
+enum ProofStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REVISIONS
+}
+
+enum ProofSource {
+  UPLOAD
+  LINK
+}
+
+model Proof {
+  id            String      @id @default(cuid())
+  order         Order       @relation(fields: [orderId], references: [id])
+  orderId       String
+  version       Int // renders as ORD-1323-P2
+  fileName      String
+  fileUrl       String? // S3/Uploadthing URL or external share link
+  source        ProofSource @default(UPLOAD)
+  status        ProofStatus @default(DRAFT)
+  sentAt        DateTime?
+  approvedAt    DateTime?
+  approvalToken String?     @unique // Phase 4: public approval link
+  createdAt     DateTime    @default(now())
+
+  @@unique([orderId, version])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// ── Production, installs, service ───────────────────────────
+
+enum Stage {
+  IN_PRODUCTION
+  IN_ASSEMBLY
+  READY_FOR_INSTALL
+  INSTALLED
+  ON_HOLD
+}
+
+model ProductionJob {
+  id           String    @id @default(cuid())
+  number       String    @unique // JOB-5225
+  order        Order?    @relation(fields: [orderId], references: [id])
+  orderId      String?
+  name         String
+  stage        Stage     @default(IN_PRODUCTION)
+  substrate    String?
+  technician   User?     @relation("Technician", fields: [technicianId], references: [id])
+  technicianId String?
+  progress     Int       @default(0)
+  dueAt        DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Install {
+  id             String    @id @default(cuid())
+  order          Order     @relation(fields: [orderId], references: [id])
+  orderId        String
+  method         String // Crane Install, Bucket Truck, Excavation & Footing, ...
+  permitRequired String? // Yes — city permit / Yes — landlord approval / No
+  crewLead       User?     @relation("CrewLead", fields: [crewLeadId], references: [id])
+  crewLeadId     String?
+  scheduledAt    DateTime?
+  status         String    @default("Scheduled")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model ServiceTicket {
+  id           String       @id @default(cuid())
+  number       String       @unique // TKT-7729
+  client       Client       @relation(fields: [clientId], references: [id])
+  clientId     String
+  issue        String
+  priority     Priority     @default(MEDIUM)
+  status       TicketStatus @default(OPEN)
+  assignedTo   User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
+  assignedToId String?
+  dueAt        DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// ── Money ───────────────────────────────────────────────────
+
+enum EstimateStatus {
+  DRAFT
+  SENT
+  APPROVED
+  DECLINED
+}
+
+model Estimate {
+  id        String         @id @default(cuid())
+  number    String         @unique // EST-2201
+  client    Client         @relation(fields: [clientId], references: [id])
+  clientId  String
+  title     String         @default("Sign Estimate")
+  status    EstimateStatus @default(DRAFT)
+  subtotal  Decimal        @default(0) @db.Decimal(12, 2)
+  marginPct Decimal        @default(0) @db.Decimal(5, 2) // informational: blended margin on the estimate
+  total     Decimal        @default(0) @db.Decimal(12, 2)
+  notes     String?
+  lineItems Json? // legacy column, superseded by EstimateLineItem
+  items     EstimateLineItem[]
+  orderId   String? // set when converted
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+}
+
+enum LineKind {
+  SIGN
+  MATERIAL
+  LABOR
+  CUSTOM
+}
+
+model EstimateLineItem {
+  id          String   @id @default(cuid())
+  estimate    Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  estimateId  String
+  kind        LineKind
+  description String
+  signType    String? // SIGN lines
+  widthIn     Float? // SIGN lines
+  heightIn    Float?
+  qty         Float    @default(1)
+  materialId  String? // MATERIAL lines
+  unitCost    Decimal  @default(0) @db.Decimal(10, 2) // cost basis per unit/sqft/hour
+  laborRole   String? // LABOR lines
+  laborHours  Float?
+  sellPrice   Decimal  @default(0) @db.Decimal(12, 2) // computed line sell
+  sortOrder   Int      @default(0)
+}
+
+// Sell-side price book per sign type — the estimating engine's heart. Fully editable.
+model PriceBookEntry {
+  signType       String  @id
+  sellPerSqFt    Decimal @db.Decimal(10, 2)
+  minPrice       Decimal @default(0) @db.Decimal(10, 2)
+  costPerSqFt    Decimal @default(0) @db.Decimal(10, 2) // blended material+labor cost basis for margin calc
+  notes          String?
+}
+
+// Simple key/value app settings (labor rates, target margin, …)
+model Setting {
+  key   String @id
+  value Json
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+model Invoice {
+  id       String        @id @default(cuid())
+  number   String        @unique // INV-1120
+  client   Client        @relation(fields: [clientId], references: [id])
+  clientId String
+  order    Order?        @relation(fields: [orderId], references: [id])
+  orderId  String?
+  total    Decimal       @db.Decimal(12, 2)
+  status   InvoiceStatus @default(DRAFT)
+  issuedAt DateTime      @default(now())
+  dueAt    DateTime?
+  qboId    String?       @unique
+
+  payments Payment[]
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  number    String   @unique // PAY-3012
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  invoiceId String
+  method    String // Credit Card, ACH, Check, Cash
+  amount    Decimal  @db.Decimal(12, 2)
+  status    String   @default("Completed") // Completed | Pending | Failed
+  paidAt    DateTime @default(now())
+  qboId     String?  @unique
+}
+
+// ── Schedule ────────────────────────────────────────────────
+
+enum EventType {
+  DESIGN_REVIEW
+  PRODUCTION_CHECK_IN
+  SITE_SURVEY
+  INSTALL
+  CLIENT_CALL
+}
+
+model ScheduleEvent {
+  id          String    @id @default(cuid())
+  type        EventType
+  title       String
+  client      Client?   @relation(fields: [clientId], references: [id])
+  clientId    String?
+  order       Order?    @relation(fields: [orderId], references: [id])
+  orderId     String?
+  startsAt    DateTime
+  durationMin Int       @default(60)
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([startsAt])
+}
+
+// ── Email filing (Phase 3 wires Gmail into this) ────────────
+
+model EmailRecord {
+  id         String   @id @default(cuid())
+  messageId  String?  @unique // Gmail message id
+  client     Client?  @relation(fields: [clientId], references: [id])
+  clientId   String?
+  contact    Contact? @relation(fields: [contactId], references: [id])
+  contactId  String?
+  order      Order?   @relation(fields: [orderId], references: [id])
+  orderId    String?
+  fromAddr   String
+  toAddr     String
+  subject    String
+  snippet    String?
+  folder     String   @default("inbox") // inbox | sent
+  receivedAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([orderId])
+}
+
+// ── Shipping ────────────────────────────────────────────────
+
+model Shipment {
+  id             String   @id @default(cuid())
+  trackingNumber String   @unique
+  order          Order    @relation(fields: [orderId], references: [id])
+  orderId        String
+  carrier        String   @default("FedEx")
+  service        String // FedEx Ground, 2Day, Freight (LTL), ...
+  packaging      String?
+  weightLb       Float?
+  cost           Decimal? @db.Decimal(10, 2)
+  status         String   @default("Label Created") // Label Created | In Transit | Delivered
+  labelUrl       String?
+  shippedAt      DateTime @default(now())
+}
+
+// ── Integration credentials (Phase 3) ───────────────────────
+
+model OAuthConnection {
+  id           String    @id @default(cuid())
+  provider     String    @unique // qbo | gmail | fedex
+  accessToken  String // encrypt at rest in Phase 5 hardening
+  refreshToken String?
+  expiresAt    DateTime?
+  meta         Json? // realmId for QBO, email for Gmail, acct # for FedEx
+  updatedAt    DateTime  @updatedAt
+}
