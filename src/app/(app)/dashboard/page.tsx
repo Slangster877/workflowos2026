@@ -22,11 +22,18 @@ export default function Dashboard() {
           <h1 className="page-title">Welcome back, {session?.user?.name ?? "there"}</h1>
           <p className="page-sub">Live from the database — here's what's happening at GrandMark today.</p>
         </div>
+        <div style={{ textAlign: "right" }}><div style={{ fontWeight: 750 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</div><div className="page-sub">Kansas City operations</div></div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 18 }}>
         {[["Active Orders", active], ["In Production", count("PRODUCTION")], ["In Install", count("INSTALL")], ["Completed", count("COMPLETED")]].map(([l, v]) => (
           <div className="card" key={l as string}><div className="stat-label">{l}</div><div className="stat-value">{v}</div></div>
         ))}
+      </div>
+      <div className="quick-grid">
+        {[
+          ["Production", "Fabrication & assembly", "/production"], ["Proofs", "Artwork approvals", "/proofs"],
+          ["Install Schedule", "Crews & permits", "/installs"], ["AI Watch", "Risk & workload signals", "/ai-tools"],
+        ].map(([title, copy, href]) => <Link href={href} key={href} className="quick-card"><span>{title}</span><small>{copy}</small><b>Open →</b></Link>)}
       </div>
       <div className="card" style={{ padding: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
