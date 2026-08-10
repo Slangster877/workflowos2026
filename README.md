@@ -1,5 +1,21 @@
 # GrandMark WorkflowOS — Phase 1 Foundation
 
+## Complete operations release
+
+WorkflowOS now includes the full shop navigation and live database-backed workspaces for Orders,
+Quotes, Proofs, Production, Installs, Schedule, Permits, Service, Customers, Contacts, Materials,
+Vendors, Shipping, Accounting, Email, Files & Logs, AI Tools, and Settings.
+
+Order status changes drive the shop handoff automatically:
+
+- moving an order to **Production** creates its production job;
+- moving it to **Install** closes fabrication readiness and creates the install record;
+- moving it to **Completed** closes the related production and install work.
+
+The application has a responsive desktop-first shell, collapsible navigation, global module search,
+light/dark themes, a live operations dashboard, and shared workflow tables for the restored modules.
+The production build currently generates 48 application and API routes.
+
 Real database, real auth, deploy-ready. The prototype's data model, ported to Postgres + Prisma,
 with NextAuth role-based sign-in and the design tokens carried over.
 
